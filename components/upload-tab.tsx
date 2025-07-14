@@ -1,236 +1,244 @@
 "use client"
 
 import type React from "react"
-
+import { motion, AnimatePresence } from "framer-motion" // Import motion and AnimatePresence
 import { useState, useCallback } from "react"
+import { Upload, CheckCircle, XCircle, AlertCircle, FolderOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { UploadCloud, X, FolderOpen, Loader2 } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
+import type { StoredFolder } from "@/lib/storage"
+
+interface UploadTabProps {
+  folders: StoredFolder[]
+  onFilesUploaded: (files: File[], folderId?: string) => void
+}
 
 interface UploadProgress {
-  id: string
-  name: string
+  id: string // Add an ID for unique key in animations
+  file: File
   progress: number
-  status: "pending" | "uploading" | "success" | "failed"
+  status: "uploading" | "success" | "error"
   error?: string
 }
 
-interface UploadTabProps {
-  folders: { id: string; name: string }[]
-  onFilesUploaded: (files: File[], folderId?: string) => void
-}
 export function UploadTab({ folders, onFilesUploaded }: UploadTabProps) {
   const [isDragOver, setIsDragOver] = useState(false)
-  const [uploadQueue, setUploadQueue] = useState<File[]>([])
   const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([])
   const [isUploading, setIsUploading] = useState(false)
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("")
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setIsDragOver(false)
+
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length > 0) {
+        handleUpload(files)
+      }
+    },
+    [selectedFolderId],
+  )
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(true)
   }, [])
 
-  const handleDragLeave = useCallback(() => {
-    setIsDragOver(false)
-  }, [])
-
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    setUploadQueue((prev) => [...prev, ...files])
   }, [])
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    setUploadQueue((prev) => [...prev, ...files])
-  }, [])
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || [])
+      if (files.length > 0) {
+        handleUpload(files)
+      }
+      // Reset input
+      e.target.value = ""
+    },
+    [selectedFolderId],
+  )
 
-  const startUpload = useCallback(async () => {
-    if (uploadQueue.length === 0 || isUploading) return
-
+  const handleUpload = async (filesToUpload: File[]) => {
     setIsUploading(true)
-    const filesToUpload = [...uploadQueue]
-    setUploadQueue([]) // Clear the queue once we start processing
 
+    // Initialize progress tracking for each file with a unique ID
     const initialProgress: UploadProgress[] = filesToUpload.map((file) => ({
-      id: `${file.name}-${Date.now()}-${Math.random()}`,
-      name: file.name,
+      id: crypto.randomUUID(), // Generate unique ID for each file
+      file,
       progress: 0,
-      status: "pending",
+      status: "uploading" as const,
     }))
-    setUploadProgress((prev) => [...prev, ...initialProgress])
+    setUploadProgress(initialProgress)
+
+    const folderId = selectedFolderId === "root" ? undefined : selectedFolderId || undefined
 
     const uploadPromises = filesToUpload.map(async (file, index) => {
-      const progressItem = initialProgress[index]
-      setUploadProgress((prev) =>
-        prev.map((item) => (item.id === progressItem.id ? { ...item, status: "uploading" } : item)),
-      )
-
+      const uploadItem = initialProgress[index]
       try {
         // Simulate upload progress
-        for (let i = 0; i <= 100; i += 10) {
-          await new Promise((resolve) => setTimeout(resolve, 100))
-          setUploadProgress((prev) =>
-            prev.map((item) => (item.id === progressItem.id ? { ...item, progress: i } : item)),
-          )
+        for (let progress = 0; progress <= 100; progress += 10) {
+          await new Promise((resolve) => setTimeout(resolve, 50)) // Faster simulation
+          setUploadProgress((prev) => prev.map((item) => (item.id === uploadItem.id ? { ...item, progress } : item)))
         }
-
-        onFilesUploaded([file], selectedFolderId || undefined) // Use the addFile from context
+        // Mark as complete
         setUploadProgress((prev) =>
-          prev.map((item) => (item.id === progressItem.id ? { ...item, progress: 100, status: "success" } : item)),
+          prev.map((item) => (item.id === uploadItem.id ? { ...item, status: "success" } : item)),
         )
-      } catch (error: any) {
-        console.error("Upload failed:", error)
+        return file // Return the file on success
+      } catch (error) {
+        console.error(`Upload failed for ${file.name}:`, error)
         setUploadProgress((prev) =>
-          prev.map((item) =>
-            item.id === progressItem.id ? { ...item, status: "failed", error: error.message || "Unknown error" } : item,
-          ),
+          prev.map((item) => (item.id === uploadItem.id ? { ...item, status: "error", error: "Upload failed" } : item)),
         )
+        return null // Return null on error
       }
     })
 
-    await Promise.all(uploadPromises)
+    const uploadedFiles = (await Promise.all(uploadPromises)).filter(Boolean) as File[] // Filter out nulls
+
+    // Call the upload handler with folder ID for successfully uploaded files
+    if (uploadedFiles.length > 0) {
+      onFilesUploaded(uploadedFiles, folderId)
+    }
+
+    // Clear progress after a delay
+    setTimeout(() => {
+      setUploadProgress([])
+    }, 2000)
     setIsUploading(false)
-  }, [uploadQueue, isUploading, onFilesUploaded, selectedFolderId])
+  }
 
-  const removeFileFromQueue = useCallback((indexToRemove: number) => {
-    setUploadQueue((prev) => prev.filter((_, index) => index !== indexToRemove))
-  }, [])
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 B"
+    const k = 1024
+    const sizes = ["B", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i]
+  }
 
-  const clearCompletedUploads = useCallback(() => {
-    setUploadProgress((prev) => prev.filter((item) => item.status !== "success" && item.status !== "failed"))
-  }, [])
-
-  const handleFolderChange = useCallback((folderId: string) => {
-    setSelectedFolderId(folderId === "root" ? null : folderId)
-  }, [])
+  const selectedFolder = folders.find((f) => f.id === selectedFolderId)
 
   return (
-    <div className="p-4 md:p-6 lg:p-8">
+    <div className="space-y-6">
+      {/* Folder Selection */}
       <Card>
         <CardHeader>
-          <CardTitle>Upload Files</CardTitle>
-          <CardDescription>Drag and drop your files here or click to select.</CardDescription>
+          <CardTitle className="flex items-center space-x-2">
+            <FolderOpen className="h-5 w-5" />
+            <span>Upload Destination</span>
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              isDragOver ? "border-primary bg-primary/10" : "border-gray-300 dark:border-gray-700"
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <UploadCloud className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-600" />
-            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Drag & drop files here or</p>
-            <Input id="file-upload" type="file" multiple className="hidden" onChange={handleFileSelect} />
-            <Label
-              htmlFor="file-upload"
-              className="mt-2 inline-flex cursor-pointer items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 bg-primary text-primary-foreground shadow"
-            >
-              Browse Files
-            </Label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <FolderOpen className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-            <Label htmlFor="folder-select" className="text-sm font-medium">
-              Upload to:
-            </Label>
-            <Select onValueChange={handleFolderChange} value={selectedFolderId || "root"}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select Folder" />
+        <CardContent>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">Select folder for uploaded files:</label>
+            <Select value={selectedFolderId} onValueChange={setSelectedFolderId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a folder (optional)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="root">All Files (Root)</SelectItem>
+                <SelectItem value="root">📁 All Files (Root)</SelectItem>
                 {folders.map((folder) => (
                   <SelectItem key={folder.id} value={folder.id}>
-                    {folder.name}
+                    📂 {folder.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {selectedFolder && (
+              <p className="text-sm text-gray-500">
+                Files will be uploaded to: <span className="font-medium">{selectedFolder.name}</span>
+              </p>
+            )}
+            {selectedFolderId === "root" && (
+              <p className="text-sm text-gray-500">
+                Files will be uploaded to: <span className="font-medium">All Files (Root)</span>
+              </p>
+            )}
           </div>
+        </CardContent>
+      </Card>
 
-          {uploadQueue.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-lg font-semibold">Files in Queue ({uploadQueue.length})</h3>
-              <AnimatePresence>
-                {uploadQueue.map((file, index) => (
-                  <motion.div
-                    key={file.name + index} // Simple key for queue, will get unique ID on actual upload
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="flex items-center justify-between rounded-md bg-gray-100 p-3 dark:bg-gray-800"
-                  >
-                    <span className="text-sm font-medium truncate">{file.name}</span>
-                    <Button variant="ghost" size="icon" onClick={() => removeFileFromQueue(index)} className="h-7 w-7">
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              <Button onClick={startUpload} disabled={isUploading} className="w-full">
-                {isUploading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading...
-                  </>
-                ) : (
-                  `Upload ${uploadQueue.length} File(s)`
-                )}
-              </Button>
-            </div>
-          )}
+      {/* Upload Area */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Upload Files</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div
+            className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+              isDragOver ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-gray-400"
+            } ${isUploading ? "opacity-50 pointer-events-none" : ""}`}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <Upload className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+            <h3 className="text-xl font-medium text-gray-900 mb-2">
+              {isUploading ? "Uploading files..." : "Drop files here"}
+            </h3>
+            <p className="text-gray-500 mb-6">Drag and drop files here, or click to select files</p>
+            <input
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+              id="file-input"
+              disabled={isUploading}
+            />
+            <Button asChild disabled={isUploading} size="lg">
+              <label htmlFor="file-input" className="cursor-pointer">
+                Select Files
+              </label>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-          {uploadProgress.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-lg font-semibold">Upload Progress</h3>
+      {/* Upload Progress */}
+      {uploadProgress.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
               <AnimatePresence>
                 {uploadProgress.map((item) => (
                   <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, y: -10 }}
+                    key={item.id} // Use unique ID as key
+                    initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: -20 }}
-                    layout
-                    className="flex flex-col gap-2 rounded-md bg-gray-100 p-3 dark:bg-gray-800"
+                    layout // Enable smooth layout transitions
+                    className="space-y-2"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium truncate">{item.name}</span>
-                      <span
-                        className={`text-xs font-semibold ${
-                          item.status === "success"
-                            ? "text-green-500"
-                            : item.status === "failed"
-                              ? "text-red-500"
-                              : "text-gray-500 dark:text-gray-400"
-                        }`}
-                      >
-                        {item.status === "uploading" ? `${item.progress}%` : item.status.toUpperCase()}
-                      </span>
+                      <div className="flex items-center space-x-3">
+                        {item.status === "success" && <CheckCircle className="h-5 w-5 text-green-500" />}
+                        {item.status === "error" && <XCircle className="h-5 w-5 text-red-500" />}
+                        {item.status === "uploading" && <AlertCircle className="h-5 w-5 text-blue-500" />}
+                        <div>
+                          <p className="text-sm font-medium truncate max-w-xs">{item.file.name}</p>
+                          <p className="text-xs text-gray-500">{formatFileSize(item.file.size)}</p>
+                        </div>
+                      </div>
+                      <span className="text-sm text-gray-500">{item.progress}%</span>
                     </div>
-                    <Progress value={item.progress} className="w-full" />
-                    {item.error && <p className="text-xs text-red-500 mt-1">{item.error}</p>}
+                    <Progress value={item.progress} className="h-2" />
+                    {item.error && <p className="text-xs text-red-500">{item.error}</p>}
                   </motion.div>
                 ))}
               </AnimatePresence>
-              {uploadProgress.some((item) => item.status === "success" || item.status === "failed") && (
-                <Button variant="outline" onClick={clearCompletedUploads} className="w-full bg-transparent">
-                  Clear Completed
-                </Button>
-              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

@@ -1,33 +1,32 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
-import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/contexts/auth-context"
 import { ErrorBoundary } from "@/components/error-boundary"
+import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "BackupBase",
-  description: "A minimal, browser-based file storage app.",
+  title: "BackupBase - Secure File Storage",
+  description: "Browser-based file storage with IndexedDB and Supabase authentication",
+  keywords: "file storage, backup, cloud storage, secure",
+  authors: [{ name: "BackupBase Team" }],
+  viewport: "width=device-width, initial-scale=1",
+  robots: "index, follow",
     generator: 'v0.dev'
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <body className={inter.className}>
         <ErrorBoundary>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            <AuthProvider>{children}</AuthProvider>
-            <Toaster />
-          </ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
         </ErrorBoundary>
       </body>
     </html>
