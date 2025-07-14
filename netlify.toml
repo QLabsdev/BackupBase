@@ -1,18 +1,15 @@
+# Base directory for the build
 [build]
-  publish = ".next"
-  command = "npm run build"
+  publish = "out" # Next.js exports to 'out' directory when output: 'export' is used
+  command = "npm run build && npm run export" # Command to build and export the Next.js app
 
-[build.environment]
-  NODE_VERSION = "18"
-  NPM_VERSION = "9"
-
-# Handle client-side routing
+# Redirects for client-side routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# Security headers
+# Headers for security and caching
 [[headers]]
   for = "/*"
   [headers.values]
@@ -20,39 +17,16 @@
     X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' *.supabase.co; frame-src 'self' *.supabase.co;"
+    Cache-Control = "public, max-age=0, must-revalidate"
 
-# Cache static assets
-[[headers]]
-  for = "/static/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
+# Specific headers for static assets
 [[headers]]
   for = "/_next/static/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# Handle API routes
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-# Handle auth callback
-[[redirects]]
-  from = "/auth/callback"
-  to = "/auth/callback"
-  status = 200
-
-# Handle email verification
-[[redirects]]
-  from = "/email-verification"
-  to = "/email-verification"
-  status = 200
-
-# Handle auth pages
-[[redirects]]
-  from = "/auth"
-  to = "/auth"
-  status = 200
+# Environment variables (optional, can be set in Netlify UI)
+[context.production.environment]
+  # NEXT_PUBLIC_SUPABASE_URL = "your_supabase_url"
+  # NEXT_PUBLIC_SUPABASE_ANON_KEY = "your_supabase_anon_key"
